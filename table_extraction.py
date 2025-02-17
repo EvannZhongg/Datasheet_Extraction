@@ -20,14 +20,14 @@ def load_prompt_from_file(prompt_file):
         return None
 
 
-def extract_device_info(markdown_text, prompt_file):
+def extract_image_info(markdown_text, prompt_file):
     """
     使用通义千问 API 提取器件类型、器件名称和参数。
     """
     # 加载 Prompt
     prompt_template = load_prompt_from_file(prompt_file)
     if not prompt_template:
-        raise ValueError("无法加载 Prompt，请检查 table_prompt.txt 文件是否存在且内容正确。")
+        raise ValueError("无法加载 Prompt，请检查 image_prompt.txt 文件是否存在且内容正确。")
 
     # 将输入文本插入到 Prompt 模板中
     prompt = prompt_template.format(markdown_text=markdown_text)
@@ -80,7 +80,39 @@ def save_to_txt(data, output_file):
         print("保存文件失败:", e)
 
 
-# 示例：读取 Markdown 文件并提取信息
+def process_all_files(input_folder, output_folder, prompt_file):
+    """
+    遍历 input_folder 文件夹中的所有 .md 文件，提取信息并保存到 output_folder。
+    """
+    # 确保输出文件夹存在
+    os.makedirs(output_folder, exist_ok=True)
+
+    # 遍历 input_folder 文件夹中的所有 .md 文件
+    for root, _, files in os.walk(input_folder):
+        for file in files:
+            if file.endswith(".md"):
+                input_file_path = os.path.join(root, file)
+                output_file_name = os.path.splitext(file)[0] + "_output.txt"
+                output_file_path = os.path.join(output_folder, output_file_name)
+
+                print(f"正在处理文件: {input_file_path}")
+
+                # 读取 Markdown 文件内容
+                try:
+                    with open(input_file_path, "r", encoding="utf-8") as f:
+                        markdown_content = f.read()
+
+                    # 调用函数提取信息
+                    extracted_info = extract_image_info(markdown_content, prompt_file)
+
+                    # 如果提取成功，保存为 TXT 文件
+                    if extracted_info:
+                        save_to_txt(extracted_info, output_file_path)
+                except Exception as e:
+                    print(f"处理文件 {input_file_path} 时出错: {e}")
+
+
+# 示例：读取子文件夹 image 下的所有 .md 文件并提取信息
 if __name__ == "__main__":
     # 从 .env 文件中读取 API Key
     api_key = os.getenv("DASHSCOPE_API_KEY")
@@ -88,17 +120,11 @@ if __name__ == "__main__":
         raise ValueError("未找到 DASHSCOPE_API_KEY，请检查 .env 文件是否正确配置。")
 
     # 定义 Prompt 文件路径
-    prompt_file = "table_prompt.txt"  # 替换为您的 Prompt 文件路径
+    prompt_file = "prompt/image_prompt.txt"  # 替换为您的 Prompt 文件路径
 
-    # 读取 Markdown 文件内容
-    input_file = "table_test.md"  # 替换为您的输入文件路径
-    with open(input_file, "r", encoding="utf-8") as file:
-        markdown_content = file.read()
+    # 定义输入和输出文件夹路径
+    input_folder = "image"  # 子文件夹 image 的路径
+    output_folder = "output_image"  # 输出文件夹路径
 
-    # 调用函数提取信息
-    extracted_info = extract_device_info(markdown_content, prompt_file)
-
-    # 如果提取成功，保存为 TXT 文件
-    if extracted_info:
-        output_file = "output.txt"  # 输出文件路径
-        save_to_txt(extracted_info, output_file)
+    # 批量处理所有文件
+    process_all_files(input_folder, output_folder, prompt_file)
