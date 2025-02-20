@@ -6,6 +6,7 @@ from dashscope import Generation
 # 加载 .env 文件中的环境变量
 load_dotenv()
 
+
 def load_prompt_from_file(prompt_file):
     """
     从指定文件中加载 Prompt 内容。
@@ -22,6 +23,7 @@ def load_prompt_from_file(prompt_file):
 def extract_handbook_nodes(handbook_content, prompt_file, output_table_dir, output_image_dir):
     """
     提取数据手册的节点信息，并结合已有结果进行纠错与融合。
+    使用流式返回方式接收模型响应。
     """
     # 加载 Prompt 模板
     prompt_template = load_prompt_from_file(prompt_file)
@@ -49,38 +51,48 @@ def extract_handbook_nodes(handbook_content, prompt_file, output_table_dir, outp
     }
     prompt = prompt_template.format(**context)
 
-    # 调用通义千问 API
-    response = Generation.call(
+    # 调用通义千问 API（启用流式返回）
+    response_stream = Generation.call(
         api_key=os.getenv("DASHSCOPE_API_KEY"),
         model="qwen-max",
         messages=[{'role': 'user', 'content': prompt}],
         result_format='text',
         max_tokens=8192,
-        temperature=0.6
+        temperature=0.6,
+        stream=True  # 启用流式返回
     )
 
-    # 解析 API 响应
-    if response.status_code == 200:
-        result = response.output["text"]
+    # 流式处理响应
+    collected_response = ""
+    try:
+        for chunk in response_stream:
+            if chunk.status_code == 200:
+                # 获取当前块的内容
+                content = chunk.output.get("text", "")
+                collected_response += content
+                print(content, end="", flush=True)  # 实时打印流式返回的内容
+            else:
+                print(f"流式返回错误: {chunk.message}")
+                return None
+    except Exception as e:
+        print("流式处理失败:", e)
+        return None
 
-        # 清理返回结果，移除多余的代码块标记（如 ```json）
-        result = result.strip()
-        if result.startswith("```json"):
-            result = result[7:]  # 移除开头的 ```json
-        if result.endswith("```"):
-            result = result[:-3]  # 移除结尾的 ```
-        result = result.strip()  # 去掉多余的空格或换行符
+    # 清理返回结果，移除多余的代码块标记（如 ```json）
+    collected_response = collected_response.strip()
+    if collected_response.startswith("```json"):
+        collected_response = collected_response[7:]  # 移除开头的 ```json
+    if collected_response.endswith("```"):
+        collected_response = collected_response[:-3]  # 移除结尾的 ```
+    collected_response = collected_response.strip()  # 去掉多余的空格或换行符
 
-        try:
-            # 验证 JSON 格式是否正确
-            extracted_data = json.loads(result)  # 将结果解析为 JSON
-            return extracted_data
-        except json.JSONDecodeError as e:
-            print("解析 JSON 失败:", e)
-            print("原始响应:", result)
-            return None
-    else:
-        print("API 调用失败:", response.message)
+    try:
+        # 验证 JSON 格式是否正确
+        extracted_data = json.loads(collected_response)  # 将结果解析为 JSON
+        return extracted_data
+    except json.JSONDecodeError as e:
+        print("解析 JSON 失败:", e)
+        print("原始响应:", collected_response)
         return None
 
 
@@ -110,7 +122,7 @@ if __name__ == "__main__":
     output_image_dir = "output_image"
 
     # 读取数据手册内容（假设数据手册是一个 Markdown 文件）
-    handbook_file = "APD_Series_203250D.md"
+    handbook_file = "APD_Series_203250D2.md"
     with open(handbook_file, "r", encoding="utf-8") as file:
         handbook_content = file.read()
 
